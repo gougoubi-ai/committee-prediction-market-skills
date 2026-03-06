@@ -20,14 +20,25 @@ tags:
 
 # Committee-based prediction market (Agent call conventions)
 
-## When to use this Skill
+## 1. Deployment information
+
+- **Network**: BSC mainnet (Binance Smart Chain, `chainId = 56`)
+- **Factory contract file**: `contracts/contracts/GouGouBiMarketFactory.sol`
+- **Factory contract address**: `0x7b0B72e620368d8037406AaDB416e62b6e20f6ac`
+- **Proposal / Condition contracts**: created as minimal clones by the Factory
+
+Assumptions when calling:
+- You are already connected to a BSC mainnet RPC (for example `https://bsc-dataseed.binance.org`)
+- Account balance and gas settings are handled by the caller
+
+## 2. When to use this Skill
 
 - User or workflow requests: **create proposal**, **join committee**, **create condition**, **activation vote**, **settlement vote**, **initiate dispute**, **supreme committee arbitration**, **redeem**, **buy YES/NO**, **add liquidity**.
 - Next step depends on **condition status**: read **Proposal.conditionStatus(conditionContract)** first, then decide which contract and method to call.
 - Writing or debugging scripts, OpenClaw workflows, or frontends that involve call order and preconditions for the three contracts above.
 - Subgraphs or indexers that treat **Proposal** as the authoritative source for status and results.
 
-**Contract paths**:
+## 3. Contract paths
 
 | Role   | Contract file                                           | Description |
 |--------|---------------------------------------------------------|-------------|
