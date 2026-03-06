@@ -1,6 +1,6 @@
-# committee-market-skills
+# committee-prediction-market-skills
 
-`committee-market-skills` is a committee-based prediction market contract skill repository for AI Agents, built around **GouGouBiMarketFactory**, **GouGouBiMarketProposal**, and **GouGouBiMarketCondition**. It provides unified call conventions and state-machine documentation so Agents can safely and reliably create proposals and conditions, run activation/settlement/dispute voting, and perform CPMM trading and redemption under natural-language instructions.
+`committee-prediction-market-skills` is a committee-based prediction market contract skill repository for AI Agents, built around **GouGouBiMarketFactory**, **GouGouBiMarketProposal**, and **GouGouBiMarketCondition**. It provides unified call conventions and state-machine documentation so Agents can safely and reliably create proposals and conditions, run activation/settlement/dispute voting, and perform CPMM trading and redemption under natural-language instructions.
 
 ---
 
