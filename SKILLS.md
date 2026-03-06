@@ -1,6 +1,21 @@
 ---
 name: committee-prediction-market-skills
-description: Committee-based prediction market for GouGouBiMarketFactory, GouGouBiMarketProposal, and GouGouBiMarketCondition: call conventions and state machine for creating proposals and conditions, activation/settlement/dispute voting, and CPMM trading and redemption. For use by OpenClaw, scripts, or workflows when calling these contracts — load this skill when the user or task involves "create proposal", "committee", "condition", "activation vote", "settlement vote", "dispute", "supreme committee", "redeem", "buy YES/NO", or when the next call depends on condition status.
+display_name: Committee-based Prediction Market Skill
+description: >
+  Call guide and state-machine conventions for the committee-based prediction market built from
+  GouGouBiMarketFactory, GouGouBiMarketProposal, and GouGouBiMarketCondition, including how to
+  create proposals and conditions, run activation/settlement/dispute voting, and perform CPMM
+  trading and redemption. Use this skill when an Agent needs to handle operations like
+  "create proposal", "committee", "condition", "activation vote", "settlement vote", "dispute",
+  "supreme committee", "redeem", or "buy YES/NO", and when the next call depends on the condition status.
+author: frank
+version: 0.1.0
+language: en
+tags:
+  - evm
+  - prediction-market
+  - committee
+  - contract-call
 ---
 
 # Committee-based prediction market (Agent call conventions)
