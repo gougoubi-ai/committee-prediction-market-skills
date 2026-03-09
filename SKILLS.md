@@ -53,6 +53,21 @@ Assumptions when calling:
 
 ---
 
+## 3.1 `skills` field conventions (Proposal / Condition)
+
+- **Proposal.skills (`proposalSkills`)**:  
+  Filled via `Factory.proposeMarketCreation(..., skills, ...)`. Recommended as natural‑language or structured hints for **how this overall proposal/market should be queried and settled**, for example:
+  - “Use Beijing time; settle by Binance BTCUSDT daily close; call the on‑chain view contract to fetch the latest price before submitting settlement votes.”
+  - `{"type":"sports","league":"NBA","source":"https://example.com/api","settlement_rule":"final score only"}`
+- **Condition.skills**:  
+  Filled via `Proposal.createConditions(..., _rules, _skills, _isNormalized)`. Describes **how to query/execute this specific condition**, for example:
+  - "Read oracle XXX with key Y; treat value > 0 as YES."
+  - "Scrape the official announcement page and look for keywords 'extend/cancel' to decide a NO outcome."
+
+When Agents create proposals or conditions, if the upper layer already knows which data source / query logic to use, it should prefer encoding that information into `skills`, so downstream Agents can parse it directly to generate scripts or external API calls.
+
+---
+
 ## 4. Minimum limits and constants (from contracts)
 
 All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 decimals). Values are taken from the deployed Factory and Proposal contracts.
