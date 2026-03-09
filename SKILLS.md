@@ -4,10 +4,12 @@ display_name: Committee-based Prediction Market Skill
 description: >
   Call guide and state-machine conventions for the committee-based prediction market built from
   GouGouBiMarketFactory, GouGouBiMarketProposal, and GouGouBiMarketCondition, including how to
-  create proposals and conditions, run activation/settlement/dispute voting, and perform CPMM
-  trading and redemption. Use this skill when an Agent needs to handle operations like
-  "create proposal", "committee", "condition", "activation vote", "settlement vote", "dispute",
-  "supreme committee", "redeem", or "buy YES/NO", and when the next call depends on the condition status.
+  create proposals and conditions (with `skills` metadata), run activation/settlement/dispute voting,
+  execute supreme-committee arbitration, apply committee/supreme penalties, distribute governance
+  rewards, and perform CPMM trading and redemption. Use this skill when an Agent needs to handle
+  operations like "create proposal", "committee", "condition", "activation vote", "settlement vote",
+  "dispute", "supreme committee", "governance reward", "redeem", or "buy YES/NO", and when the next
+  call depends on the condition status.
 author: frank
 version: 0.1.0
 language: en
@@ -24,7 +26,7 @@ tags:
 
 - **Network**: BSC mainnet (Binance Smart Chain, `chainId = 56`)
 - **Factory contract file**: `GouGouBiMarketFactory.sol`
-- **Factory contract address**: `0x7b0B72e620368d8037406AaDB416e62b6e20f6ac`
+- **Factory contract address**: `0xa334AcEFc50AE494610678FBf7e2A35Ca05Ff336`
 - **Staking token (DOGE / 狗狗币)**: `0xb05678Ed0c9559955559DE864829a0c8AF574444` — DOGE is 狗狗币 (Dogecoin). All proposal/supreme committee stakes and vote locks use this token (18 decimals). Caller must `approve` the Factory (or transfer DOGE) before `proposeMarketCreation` and `stakeForProposalCommittee`.
 - **Proposal / Condition contracts**: created as minimal clones by the Factory
 
@@ -60,13 +62,15 @@ All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 d
 | Constant | Value | Meaning |
 |----------|--------|--------|
 | **MIN_STAKE_AMOUNT** | `10 * 1e18` (10 DOGE) | Minimum stake for `proposeMarketCreation(..., stakeAmount)` and minimum per `stakeForProposalCommittee(proposal, amount)` when committee has &lt; 3 members. |
-| **COMMITTEE_MIN_SIZE** | `3` | Minimum number of committee members before the proposal can create conditions. |
+| **COMMITTEE_MIN_SIZE** | `3` | Minimum committee size for **governance thresholds** such as activation voting (2/3 of committee) and some supreme-governance rules; **note**: creating conditions now only requires “caller is a committee member”, not that the committee has ≥ 3 members. |
 | **Committee stake when full** | `amount >= avgStake * 2` | When the committee already has ≥ 3 members, a new joiner must stake at least **twice the current average stake** per member. Use `factory.getProposalCommitteeMinStakeToJoin(proposal)` to get `(minStakeToJoin, isFull)`. |
 | **SETTLEMENT_BOND_MIN** | `10 * 1e18` (10 DOGE) | Minimum `lockAmount` for `conditionSettlementVoteLock(conditionContract, result, lockAmount)` and `voteOnConditionResult(..., lockAmount)`. |
 | **DISPUTE_BOND_MIN** | `10 * 1e18` (10 DOGE) | Minimum `lockAmount` for `initiateDispute(conditionContract, evidence, lockAmount)`. |
 | **SUPREME_GOVERNANCE_MIN_LOCK_AMOUNT** | `10 * 1e18` (10 DOGE) | Minimum `lockAmount` for `voteConditionDisputeSupreme(conditionContract, result, lockAmount)`. |
 | **SUPREME_MIN_STAKE_AMOUNT** | `100 * 1e18` (100 DOGE) | Minimum stake for `stakeForSupremeCommittee(amount)`. |
 | **GOVERNANCE_SIZE** | `21` | Number of supreme committee governance members (top 21 by stake) who can call `voteConditionDisputeSupreme`. |
+| **SETTLEMENT_PENALTY_WINDOW_SECONDS** | `600` (10 min) | After `conditionDeadline + 600`, if the committee never voted (no settlement bonds), anyone may call `penalizeProposalCommitteeForNoVote` to slash 10% of each committee member’s stake and extend the vote timeout. |
+| **DISPUTER_RATIO_DENOMINATOR / SUPREME_RATIO_NUMERATOR** | `10 / 3` | When disputes lose, 30% of dispute/committee penalties go to supreme governance (pro‑rata by stake), 70% to committee side or disputers as defined in Factory. |
 
 ### 4.2 Proposal time windows
 
@@ -93,7 +97,7 @@ All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 d
 
 ```
 [1] Factory.proposeMarketCreation(...)  → get proposalAddress
-[2] Factory.stakeForProposalCommittee(proposalAddress, amount)  → at least 3 members
+[2] Factory.stakeForProposalCommittee(proposalAddress, amount)  → optional, grows committee and stake-weight but no longer required for creating conditions
 [3] Proposal.createConditions(...)  → get conditionContract from events/conditionContracts
 [4] Proposal.voteOnConditionActivation(conditionContract, approve)  → 2/3 approve → status=ACTIVE(1)
      │
@@ -123,6 +127,7 @@ All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 d
 - Trading/liquidity: `Proposal.conditionStatus(cond)==1` and `Condition.tradeDeadline()>block.timestamp`.  
 - Settlement vote window: `conditionDeadline + 600` (10 min).  
 - Dispute window: `conditionDeadline + 600 + 600` (20 min after condition deadline).  
+- Committee no‑vote penalty: after `conditionDeadline + 600` with **no settlement votes recorded**, anyone may call `Factory.penalizeProposalCommitteeForNoVote(proposal, conditionContract)` to slash committee stakes and extend the vote window.  
 - Status authority: always use **Proposal.conditionStatus(conditionContract)**; do not rely on Condition alone.
 
 ---
@@ -144,15 +149,18 @@ All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 d
 
 | Task              | Contract  | Method | Constraints |
 |-------------------|----------|--------|-------------|
-| Create proposal   | Factory  | proposeMarketCreation(liquidityToken, proposalName, deadline, imageUrl, rules, timezone, language, groupUrl, tags, stakeAmount) | stakeAmount ≥ 10 DOGE (1e19); approve Factory for DOGE first; returns proposalAddress |
+| Create proposal   | Factory  | proposeMarketCreation(liquidityToken, proposalName, deadline, imageUrl, rules, timezone, language, groupUrl, skills, tags, stakeAmount) | stakeAmount ≥ 10 DOGE (1e19); `skills` is arbitrary metadata string; approve Factory for DOGE first; returns proposalAddress |
 | Committee expand  | Factory  | stakeForProposalCommittee(proposal, amount) | amount ≥ 10 DOGE; if committee already ≥3, amount ≥ 2× avg stake (use getProposalCommitteeMinStakeToJoin) |
-| Create condition  | Proposal | createConditions(conditionName, deadline, tradeDeadline, conditionImageUrl, rules, isNormalized) | Caller must be proposal committee member; committee ≥ 3 |
+| Stake supreme committee | Factory | stakeForSupremeCommittee(amount) | amount ≥ 100 DOGE; increases caller’s supreme stake and may put them into top‑21 governance set |
+| Claim governance rewards | Factory | claimGovernanceReward() | Anyone with accumulated penalty/committee rewards can call; pays out DOGE and condition‑token rewards, reverts if no reward |
+| Penalize inactive committee | Factory | penalizeProposalCommitteeForNoVote(proposal, conditionContract) | After `conditionDeadline + 600`, status==ACTIVE and **no settlement votes**; slashes 10% of each committee member’s stake and distributes to supreme governance; extends settlement window |
+| Create condition  | Proposal | createConditions(conditionName, deadline, tradeDeadline, conditionImageUrl, rules, skills, isNormalized) | Caller must be **proposal committee member**; no minimum committee size requirement; `skills` is arbitrary metadata describing the condition |
 | Activation vote   | Proposal | voteOnConditionActivation(conditionContract, approve) | status==CREATED; 2/3 approves → ACTIVE, 2/3 rejects → REJECTED |
 | Read status       | Proposal | conditionStatus(conditionContract) | Authoritative; read first then decide next call |
-| Advance status    | Proposal | checkConditionStatus(conditionContract) | Anyone can call; updates status by time and votes |
-| Settlement vote   | Proposal | conditionSettlementVoteLock(conditionContract, result, lockAmount) or voteOnConditionResult(conditionContract, result, evidence, lockAmount) | result: 1=YES, 2=NO; lockAmount ≥ 10 DOGE; within conditionDeadline+600 |
-| Initiate dispute  | Proposal | initiateDispute(conditionContract, evidence, lockAmount) | status==DISPUTED; lockAmount ≥ 10 DOGE; within dispute window (deadline+1200) |
-| Supreme committee vote | Factory | voteConditionDisputeSupreme(conditionContract, result, lockAmount) | Caller in top 21 governance; result 1=YES, 2=NO; lockAmount ≥ 10 DOGE |
+| Advance status    | Proposal | checkConditionStatus(conditionContract) | Anyone can call; updates status by time and votes, may transition to DISPUTED / DISPUTED_INITIATED / SETTLED and handle dispute‑bond releases and fee distribution |
+| Settlement vote   | Proposal | conditionSettlementVoteLock(conditionContract, result, lockAmount) or voteOnConditionResult(conditionContract, result, evidence, lockAmount) | result: 1=YES, 2=NO; lockAmount ≥ 10 DOGE; within conditionDeadline+600; cannot switch side once bonded on YES/NO |
+| Initiate dispute  | Proposal | initiateDispute(conditionContract, evidence, lockAmount) | status==DISPUTED; lockAmount ≥ 10 DOGE; within dispute window (deadline+1200); multiple initiators allowed and summed |
+| Supreme committee vote | Factory | voteConditionDisputeSupreme(conditionContract, result, lockAmount) | Caller in top‑21 governance; result 1=YES, 2=NO; lockAmount ≥ 10 DOGE; moves DISPUTED_INITIATED → SETTLED and triggers committee/disputer penalties and rewards |
 | Add liquidity     | Condition | addLiquidity(amount, lpType) | status==ACTIVE, tradeDeadline>now; lpType 0=FEE, 1=RISK |
 | Buy/sell/swap      | Condition | buyYes(tokenIn, minYesOut)/buyNo/sellYes/sellNo/swapYesForNo/swapNoForYes | status==ACTIVE, tradeDeadline>now |
 | Redeem             | Condition | redeem() / claimLp() | status==SETTLED |
@@ -167,6 +175,7 @@ All stake and lock amounts below are in **DOGE（狗狗币 / Dogecoin）** (18 d
 - Minimum amounts: proposal/committee stake ≥ 10 DOGE (1e19 wei); when committee has ≥3 members, new joiner needs ≥ 2× average stake. Settlement/dispute/supreme lock ≥ 10 DOGE each.
 - Create condition, activation, settlement vote: **proposal committee members** only; dispute arbitration: **supreme governance members** (top 21 by stake); redeem/claimLp: only after **SETTLED**.
 - Staking token: DOGE at `factory.dogeToken()`; approve Factory before proposeMarketCreation and stakeForProposalCommittee.
+ - Supreme governance: stake ≥ 100 DOGE via `stakeForSupremeCommittee`, then read top‑21 via `getSupremeCommitteeMembers` and call `claimGovernanceReward` to withdraw penalty and winner rewards when available.
 
 ---
 
@@ -183,9 +192,13 @@ Below is a **minimal ABI** of commonly used methods and key events for Agents; u
 
 ```json
 [
-  {"type":"function","name":"proposeMarketCreation","inputs":[{"name":"liquidityToken","type":"address"},{"name":"proposalName","type":"string"},{"name":"deadline","type":"uint256"},{"name":"imageUrl","type":"string"},{"name":"rules","type":"string"},{"name":"timezone","type":"string"},{"name":"language","type":"string"},{"name":"groupUrl","type":"string"},{"name":"tags","type":"string[]"},{"name":"stakeAmount","type":"uint256"}],"outputs":[{"name":"proposalAddress","type":"address"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"proposeMarketCreation","inputs":[{"name":"liquidityToken","type":"address"},{"name":"proposalName","type":"string"},{"name":"deadline","type":"uint256"},{"name":"imageUrl","type":"string"},{"name":"rules","type":"string"},{"name":"timezone","type":"string"},{"name":"language","type":"string"},{"name":"groupUrl","type":"string"},{"name":"skills","type":"string"},{"name":"tags","type":"string[]"},{"name":"stakeAmount","type":"uint256"}],"outputs":[{"name":"proposalAddress","type":"address"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"stakeForSupremeCommittee","inputs":[{"name":"amount","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"claimGovernanceReward","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"penalizeProposalCommitteeForNoVote","inputs":[{"name":"proposal","type":"address"},{"name":"conditionContract","type":"address"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"stakeForProposalCommittee","inputs":[{"name":"proposal","type":"address"},{"name":"amount","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"getProposalCommitteeMembers","inputs":[{"name":"proposal","type":"address"}],"outputs":[{"name":"","type":"address[]"}],"stateMutability":"view"},
+  {"type":"function","name":"getSupremeCommitteeMembers","inputs":[],"outputs":[{"name":"","type":"address[]"}],"stateMutability":"view"},
   {"type":"function","name":"voteConditionDisputeSupreme","inputs":[{"name":"conditionContract","type":"address"},{"name":"result","type":"uint8"},{"name":"amount","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"MIN_STAKE_AMOUNT","inputs":[],"outputs":[{"type":"uint256"}],"stateMutability":"view"},
   {"type":"function","name":"COMMITTEE_MIN_SIZE","inputs":[],"outputs":[{"type":"uint256"}],"stateMutability":"view"},
@@ -199,7 +212,7 @@ Below is a **minimal ABI** of commonly used methods and key events for Agents; u
 
 ```json
 [
-  {"type":"function","name":"createConditions","inputs":[{"name":"_conditionName","type":"string"},{"name":"_deadline","type":"uint256"},{"name":"_tradeDeadline","type":"uint256"},{"name":"_conditionImageUrl","type":"string"},{"name":"_rules","type":"string"},{"name":"_isNormalized","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"createConditions","inputs":[{"name":"_conditionName","type":"string"},{"name":"_deadline","type":"uint256"},{"name":"_tradeDeadline","type":"uint256"},{"name":"_conditionImageUrl","type":"string"},{"name":"_rules","type":"string"},{"name":"_skills","type":"string"},{"name":"_isNormalized","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"voteOnConditionActivation","inputs":[{"name":"conditionContract","type":"address"},{"name":"approve","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"conditionStatus","inputs":[{"name":"conditionContract","type":"address"}],"outputs":[{"name":"","type":"uint8"}],"stateMutability":"view"},
   {"type":"function","name":"conditionResult","inputs":[{"name":"conditionContract","type":"address"}],"outputs":[{"name":"","type":"uint8"}],"stateMutability":"view"},
