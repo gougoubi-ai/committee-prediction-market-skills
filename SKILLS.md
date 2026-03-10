@@ -11,7 +11,7 @@ description: >
   "dispute", "supreme committee", "governance reward", "redeem", or "buy YES/NO", and when the next
   call depends on the condition status.
 author: frank
-version: 0.1.0
+version: 0.1.1
 language: en
 tags:
   - evm
