@@ -18,6 +18,7 @@ tags:
   - prediction-market
   - committee
   - contract-call
+  - subgraph
 ---
 
 # Committee-based prediction market (Agent call conventions)
@@ -40,6 +41,7 @@ Assumptions when calling:
 - Next step depends on **condition status**: read **Proposal.conditionStatus(conditionContract)** first, then decide which contract and method to call.
 - Writing or debugging scripts, OpenClaw workflows, or frontends that involve call order and preconditions for the three contracts above.
 - Subgraphs or indexers that treat **Proposal** as the authoritative source for status and results.
+- **Graph queries**: Query indexed data (proposals, conditions, trades, votes, disputes, etc.) via the Subgraph endpoint; see section below «Subgraph (Graph) support».
 
 ## 3. Contract paths
 
@@ -268,6 +270,71 @@ Usage examples (ethers v6):
 - Read status: `const status = await proposalContract.conditionStatus(conditionAddress)`.  
 - Create proposal: `const tx = await factoryContract.proposeMarketCreation(...); const rec = await tx.wait();` get `proposalAddress` from events or return value.  
 - After creating condition, get `conditionContract` from event `ConditionCreated` or `proposalContract.conditionContracts(index)`.
+
+---
+
+## Subgraph (Graph) support
+
+For querying indexed on-chain data as an alternative or supplement to direct RPC calls. Currently in **dev** stage.
+
+### Endpoint
+
+| Environment | URL |
+|-------------|-----|
+| **Dev** | `https://api.goldsky.com/api/public/project_cmh1u6lj9zwam01yi0vum6rww/subgraphs/gougoubi-subgraph/dev/gn` |
+
+### Schema and entities
+
+Entity definitions are in `schema.graphql`. Main entities include:
+
+| Entity | Description |
+|--------|-------------|
+| **Proposal** | Proposal: id, proposer, name, deadline, conditions, status, tags, skills, etc. |
+| **Condition** | Condition: id, proposal, status, deadline, tradeDeadline, yesToken, noToken, trades, votes, disputes, etc. |
+| **Trade** | Trade: condition, user, type (BuyYes/BuyNo/SellYes/SellNo/SwapYesForNo/SwapNoForYes), tokenIn, tokenOut, price, etc. |
+| **Vote** | Vote: condition, voter, voteType (Activation/Settlement), approve, result, etc. |
+| **Dispute** | Dispute: condition, initiator, evidence, bondAmount, etc. |
+| **ProposalCommittee** / **ProposalCommitteeMember** | Proposal committee and members |
+| **SupremeCommittee** / **GovernanceCommittee** | Supreme committee and governance committee |
+| **PriceRecord** / **Candle** | Price records and candlestick data |
+| **LiquidityEvent** | Liquidity events |
+| **TokenHolder** | Token holders |
+| **UserConditionProfit** | User condition profit summary |
+
+### Use cases
+
+- Filter proposals and conditions by status, tags, or language
+- Query trade history, price trends, and candlestick data
+- Query committee members, votes, and disputes
+- Query user positions and profits
+- Build frontend lists, charts, and statistics
+
+### Example queries (GraphQL)
+
+```graphql
+# Query active proposals
+query ActiveProposals {
+  proposals(where: { status: "ACTIVE" }, first: 20, orderBy: createdAt, orderDirection: desc) {
+    id
+    name
+    proposer
+    deadline
+    conditionCount
+    tags
+    conditions { id name status deadline tradeDeadline }
+  }
+}
+
+# Query trades for a condition
+query ConditionTrades($conditionId: ID!) {
+  condition(id: $conditionId) {
+    id name status
+    trades(first: 50, orderBy: timestamp, orderDirection: desc) {
+      id user type tokenIn tokenOut price timestamp
+    }
+  }
+}
+```
 
 ---
 
