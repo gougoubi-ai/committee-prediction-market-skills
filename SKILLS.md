@@ -27,7 +27,7 @@ tags:
 
 - **Network**: BSC mainnet (Binance Smart Chain, `chainId = 56`)
 - **Factory contract file**: `GouGouBiMarketFactory.sol`
-- **Factory contract address**: `0x1e47990Fd9A65dA06f9C6B3460652DfF008C1A8C`
+- **Factory contract address**: `0x18bb4b3AE868064B898C08D1b60C1bfE1AB488fa`
 - **Staking token (DOGE / 狗狗币)**: `0xb05678Ed0c9559955559DE864829a0c8AF574444` — DOGE is 狗狗币 (Dogecoin). All proposal/supreme committee stakes and vote locks use this token (18 decimals). Caller must `approve` the Factory (or transfer DOGE) before `proposeMarketCreation` and `stakeForProposalCommittee`.
 - **Proposal / Condition contracts**: created as minimal clones by the Factory
 
